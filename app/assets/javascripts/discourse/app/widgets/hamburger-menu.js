@@ -27,16 +27,22 @@ createWidget("priority-faq-link", {
   },
 
   click(e) {
-    if (this.siteSettings.faq_url === this.attrs.href) {
+    const {
+      attrs: { href },
+      currentUser,
+      siteSettings
+    } = this;
+
+    if (siteSettings.faq_url === href) {
       ajax(userPath("read-faq"), { type: "POST" }).then(() => {
-        this.currentUser.set("read_faq", true);
+        currentUser.set("read_faq", true);
 
         if (wantsNewWindow(e)) {
           return;
         }
 
         e.preventDefault();
-        DiscourseURL.routeTo(this.attrs.href);
+        DiscourseURL.routeTo(href);
       });
     } else {
       if (wantsNewWindow(e)) {
@@ -44,12 +50,14 @@ createWidget("priority-faq-link", {
       }
 
       e.preventDefault();
-      DiscourseURL.routeTo(this.attrs.href);
+      DiscourseURL.routeTo(href);
     }
   }
 });
 
 export default createWidget("hamburger-menu", {
+  buildKey: () => "hamburger-menu",
+
   tagName: "div.hamburger-panel",
 
   settings: {
@@ -57,6 +65,10 @@ export default createWidget("hamburger-menu", {
     maxWidth: 320,
     showFAQ: true,
     showAbout: true
+  },
+
+  defaultState() {
+    return { loaded: false, loading: false };
   },
 
   adminLinks() {
@@ -89,14 +101,15 @@ export default createWidget("hamburger-menu", {
   },
 
   showUserDirectory() {
-    if (!this.siteSettings.enable_user_directory) return false;
-    if (this.siteSettings.hide_user_profiles_from_public && !this.currentUser)
-      return false;
-    return true;
+    const { currentUser, siteSettings } = this;
+    return (
+      siteSettings.enable_user_directory &&
+      (!siteSettings.hide_user_profiles_from_public || currentUser)
+    );
   },
 
   generalLinks() {
-    const { siteSettings } = this;
+    const { attrs, currentUser, siteSettings, state } = this;
     const links = [];
 
     links.push({
@@ -106,7 +119,7 @@ export default createWidget("hamburger-menu", {
       title: "filters.latest.help"
     });
 
-    if (this.currentUser) {
+    if (currentUser) {
       links.push({
         route: "discovery.new",
         className: "new-topics-link",
@@ -126,11 +139,9 @@ export default createWidget("hamburger-menu", {
       });
     }
 
-    // Staff always see the review link. Non-staff will see it if there are items to review
-    if (
-      this.currentUser &&
-      (this.currentUser.staff || this.currentUser.reviewable_count)
-    ) {
+    // Staff always see the review link.
+    // Non-staff will see it if there are items to review
+    if (currentUser && (currentUser.staff || currentUser.reviewable_count)) {
       links.push({
         route: siteSettings.reviewable_default_topics
           ? "review.topics"
@@ -165,7 +176,7 @@ export default createWidget("hamburger-menu", {
       });
     }
 
-    if (this.siteSettings.enable_group_directory) {
+    if (siteSettings.enable_group_directory) {
       links.push({
         route: "groups",
         className: "groups-link",
@@ -173,23 +184,25 @@ export default createWidget("hamburger-menu", {
       });
     }
 
-    if (this.siteSettings.tagging_enabled) {
+    if (siteSettings.tagging_enabled) {
       links.push({ route: "tags", label: "tagging.tags" });
     }
 
     const extraLinks = flatten(
-      applyDecorators(this, "generalLinks", this.attrs, this.state)
+      applyDecorators(this, "generalLinks", attrs, state)
     );
+
     return links.concat(extraLinks).map(l => this.attach("link", l));
   },
 
   listCategories() {
-    const maxCategoriesToDisplay = this.siteSettings
-      .header_dropdown_category_count;
+    const { currentUser, site, siteSettings } = this;
+    const maxCategoriesToDisplay = siteSettings.header_dropdown_category_count;
+
     let categories = [];
 
-    if (this.currentUser) {
-      const allCategories = this.site
+    if (currentUser) {
+      const allCategories = site
         .get("categories")
         .filter(c => c.notification_level !== NotificationLevels.MUTED);
 
@@ -203,7 +216,8 @@ export default createWidget("hamburger-menu", {
           );
         });
 
-      const topCategoryIds = this.currentUser.get("top_category_ids") || [];
+      const topCategoryIds = currentUser.get("top_category_ids") || [];
+
       topCategoryIds.forEach(id => {
         const category = allCategories.find(c => c.id === id);
         if (category && !categories.includes(category)) {
@@ -217,14 +231,14 @@ export default createWidget("hamburger-menu", {
           .sort((a, b) => b.topic_count - a.topic_count)
       );
     } else {
-      categories = this.site
+      categories = site
         .get("categoriesByCount")
         .filter(c => c.notification_level !== NotificationLevels.MUTED);
     }
 
-    if (!this.siteSettings.allow_uncategorized_topics) {
+    if (!siteSettings.allow_uncategorized_topics) {
       categories = categories.filter(
-        c => c.id !== this.site.uncategorized_category_id
+        c => c.id !== site.uncategorized_category_id
       );
     }
 
@@ -235,8 +249,10 @@ export default createWidget("hamburger-menu", {
   },
 
   footerLinks(prioritizeFaq, faqUrl) {
+    const { attrs, capabilities, settings, site, siteSettings, state } = this;
     const links = [];
-    if (this.settings.showAbout) {
+
+    if (settings.showAbout) {
       links.push({
         route: "about",
         className: "about-link",
@@ -244,12 +260,11 @@ export default createWidget("hamburger-menu", {
       });
     }
 
-    if (this.settings.showFAQ && !prioritizeFaq) {
+    if (settings.showFAQ && !prioritizeFaq) {
       links.push({ href: faqUrl, className: "faq-link", label: "faq" });
     }
 
-    const { site } = this;
-    if (!site.mobileView && !this.capabilities.touch) {
+    if (!site.mobileView && !capabilities.touch) {
       links.push({
         href: "",
         action: "showKeyboard",
@@ -259,28 +274,29 @@ export default createWidget("hamburger-menu", {
     }
 
     if (
-      this.site.mobileView ||
-      (this.siteSettings.enable_mobile_theme && this.capabilities.touch)
+      site.mobileView ||
+      (siteSettings.enable_mobile_theme && capabilities.touch)
     ) {
       links.push({
         action: "toggleMobileView",
         className: "mobile-toggle-link",
-        label: this.site.mobileView ? "desktop_view" : "mobile_view"
+        label: site.mobileView ? "desktop_view" : "mobile_view"
       });
     }
 
     const extraLinks = flatten(
-      applyDecorators(this, "footerLinks", this.attrs, this.state)
+      applyDecorators(this, "footerLinks", attrs, state)
     );
+
     return links.concat(extraLinks).map(l => this.attach("link", l));
   },
 
   panelContents() {
-    const { currentUser } = this;
+    const { attrs, currentUser, settings, siteSettings, state } = this;
     const results = [];
-    const faqUrl = this.siteSettings.faq_url || getURL("/faq");
+    const faqUrl = siteSettings.faq_url || getURL("/faq");
     const prioritizeFaq =
-      this.settings.showFAQ && this.currentUser && !this.currentUser.read_faq;
+      settings.showFAQ && currentUser && !currentUser.read_faq;
 
     if (prioritizeFaq) {
       results.push(
@@ -300,7 +316,7 @@ export default createWidget("hamburger-menu", {
           name: "admin-links",
           contents: () => {
             const extraLinks = flatten(
-              applyDecorators(this, "admin-links", this.attrs, this.state)
+              applyDecorators(this, "admin-links", attrs, state)
             );
             return this.adminLinks().concat(extraLinks);
           }
@@ -315,7 +331,7 @@ export default createWidget("hamburger-menu", {
       })
     );
 
-    if (this.settings.showCategories) {
+    if (settings.showCategories) {
       results.push(this.listCategories());
       results.push(h("hr.categories-separator"));
     }
@@ -331,7 +347,27 @@ export default createWidget("hamburger-menu", {
     return results;
   },
 
-  html() {
+  refreshReviewableCount(state) {
+    const { currentUser } = this;
+
+    if (state.loading || !currentUser) return;
+
+    state.loading = true;
+
+    ajax("/review/count.json")
+      .then(({ count }) => currentUser.set("reviewable_count", count))
+      .finally(() => {
+        state.loaded = true;
+        state.loading = false;
+        this.scheduleRerender();
+      });
+  },
+
+  html(attrs, state) {
+    if (!state.loaded) {
+      this.refreshReviewableCount(state);
+    }
+
     return this.attach("menu-panel", {
       contents: () => this.panelContents(),
       maxWidth: this.settings.maxWidth
