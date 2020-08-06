@@ -116,6 +116,11 @@ class Emoji
         result << Emoji.new.tap do |e|
           e.name = name
           url = (Discourse.base_uri + url) if url[/^\/[^\/]/]
+          if SiteSetting.Upload.enable_s3_uploads
+            if url.start_with?(SiteSetting.Upload.s3_base_url)
+              url = url.sub(SiteSetting.Upload.s3_base_url, SiteSetting.Upload.s3_cdn_url)
+            end
+          end
           e.url = url
           e.group = group || DEFAULT_GROUP
         end
